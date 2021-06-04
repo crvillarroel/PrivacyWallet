@@ -1,0 +1,52 @@
+
+
+
+#issuerHome p {
+    margin-bottom: 0;
+    font-size: 0.8rem;
+}
+
+.placeHolder p {
+    margin-bottom: 0;
+}
+
+.etiqueta {
+    font-size: 1rem;
+    margin-bottom: 0;
+}
+.valor {
+    background-color: aliceblue;
+    font-size: 1.3rem;
+    font-weight: 500;
+    margin-bottom: 0.4rem;
+}
+
+
+.fixed-action-btn {
+    right: 2rem;
+    bottom: 2rem;
+
+}
+
+.fixed-action-btn>.btn-floating {
+    /* position: relative; */
+    -webkit-transform: scale(1);
+    transform: scale(1);
+    border-radius: 50%;
+    line-height: 2;
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+}
+
+#header {
+    margin-bottom: 0.7rem;
+
+}
+
+
+#realplaceholderQR {
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+  }
