@@ -1,0 +1,5 @@
+- *.pyc
+- private/
+- __pycache__/
+- .vscode/
+- .git/
