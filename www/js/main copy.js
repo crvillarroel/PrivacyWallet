@@ -1,7 +1,12 @@
 //"use strict";
 
+log.setLevel(log.levels.INFO)
+log.info("Hello, starting the module AppOnsen")
+
 // Logging level (if false, only log Errors)
 const LOG_ALL = true
+
+const PRODUCTION = true
 
 // Universal Resolver, Verifier and Fake Issuer URLs
 //const MY_SERVER = window.location.origin
@@ -15,11 +20,68 @@ const FAKE_ISSUER_GET_PUBLIC_CREDENTIALS = MY_SERVER + "/api/verifiable-credenti
 const ISSUER_GET_CREDENTIAL = "https://api.lanzarotesafe.org/sms/"
 const ISSUER_GET_PUBLIC_CREDENTIAL = MY_SERVER + "/api/verifiable-credential/v1/public/"
 
+// This function is called on first load and when a refresh is triggered in any page
+// When called the DOM is fully loaded and safe to manipulate
+$(async function () {
+
+    // Handle one-time initialization when the user executes for the first time the app
+    await performOneTimeInitialization();
+
+
+
+    // Install service worker for off-line support
+    if (PRODUCTION && ('serviceWorker' in navigator)) {
+        navigator.serviceWorker.register('/sw.js')
+          .then(() => { mylog('Service Worker Registered'); });
+    }
+
+
+    // Check if a credential id was specified in the URL
+    let credId = searchParams.get("id")
+
+    if (credId) {
+
+        // Build the URL of the server to retrieve the credential
+        var targetURLRead = ISSUER_GET_CREDENTIAL + credId
+
+        // Request the credential
+        await requestQRAndDisplay(targetURLRead, "#displayCredentialPage", ST_PASSENGER_SCAN)
+
+        return
+    }
+
+    // Check if a public credential id was specified in the URL
+    credId = searchParams.get("pubid")
+
+    if (credId) {
+
+        // Build the URL of the server to retrieve the credential
+        var targetURLRead = ISSUER_GET_PUBLIC_CREDENTIAL + credId
+        console.log("Public Credential", targetURLRead)
+
+        // Request the credential
+        await requestQRAndDisplay(targetURLRead, "#displayCredentialPage", ST_PASSENGER_SCAN)
+
+        return
+    }
+
+    // Show current page and execute logic on page transition
+    mylog(homePage)
+    //processPageEntered(homePage, undefined);
+    gotoPage(homePage)
+
+});
+
+
+
+
+
+
+
+
 // Compile the templates for displaying the credentials
 compileCredentialTemplates();
 
-// Get a reference to the Navigator, to facilitate access later
-var nav = document.querySelector('#navigator')
 
 // **************************************************
 // Local database management
@@ -333,55 +395,6 @@ function logAppInstalled(evt) {
 // ********************************************************
 
 
-// This function is called on first load and when a refresh is triggered in any page
-// When called the DOM is fully loaded and safe to manipulate
-$(async function () {
-
-    // Install service worker for better off-line support
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js')
-          .then(() => { mylog('Service Worker Registered'); });
-    }
-
-    // Handle one-time initialization when the user executes for the first time the app
-    await performOneTimeInitialization();
-
-    // Check if a credential id was specified in the URL
-    let credId = searchParams.get("id")
-
-    if (credId) {
-
-        // Build the URL of the server to retrieve the credential
-        var targetURLRead = ISSUER_GET_CREDENTIAL + credId
-
-        // Request the credential
-        await requestQRAndDisplay(targetURLRead, "#displayCredentialPage", ST_PASSENGER_SCAN)
-
-        return
-    }
-
-    // Check if a public credential id was specified in the URL
-    credId = searchParams.get("pubid")
-
-    if (credId) {
-
-        // Build the URL of the server to retrieve the credential
-        var targetURLRead = ISSUER_GET_PUBLIC_CREDENTIAL + credId
-        console.log("Public Credential", targetURLRead)
-
-        // Request the credential
-        await requestQRAndDisplay(targetURLRead, "#displayCredentialPage", ST_PASSENGER_SCAN)
-
-        return
-    }
-
-
-    // Show current page and execute logic on page transition
-    mylog(homePage)
-    processPageEntered(homePage, undefined);
-
-});
-
 
 // Listen for PopStateEvent (Back or Forward buttons are clicked)
 window.addEventListener("popstate", async function (event) {
@@ -415,6 +428,9 @@ async function processPageEntered(pageName, pageData) {
     // Set the default status of the Navbar
     headerBrandBack(false)
 
+    // Stop any active stream
+    stopAllMediaTracks()
+
     // If the hash is not a registered page, go to the home page
     if (pages[pageName] == null) {
         pageName = homePage
@@ -441,6 +457,7 @@ async function gotoPage(pageName, pageData) {
         return;
     }
 
+    console.log("CURRENT STATE", window.history.state)
     mylog("Navigating to ", pageName, pageData)
 
     // Create a new history state
@@ -476,21 +493,6 @@ async function performOneTimeInitialization() {
         await settingsPut("initialized", true);
 
     }
-
-}
-
-// Generate the Peer DID for the user
-async function getOrGeneratePeerDID() {
-
-    // Check if we already have the peerDID in the database
-    var didData = await settingsGet("didData");
-    if (didData == null) {
-        didData = await generateDidPeer();
-        mylog(didData.did, didData.keyPair);
-        await settingsPut("didData", didData);
-    }
-
-    return didData;
 
 }
 
@@ -580,16 +582,23 @@ var elwidth = 0
 var frameSeparation = 400
 var thePage = ""
 
-// Triggers from the #passengerDisplayQR page change
+// Triggers from the #displayQRPage page change
 // This page generates the QR so it can be scanned by the Verifier
 // In order to send big amounts of data, it displays several QRs in sequence
-async function passengerDisplayQR(page, credential) {
+async function displayQRPage(page, credential) {
 
     thePage = page
-    qrDisplayType = credential["type"]
-    if (credential["decoded"]['body']['vc']['credentialSchema']['id'] == "publicCredential") {
-        qrDisplayType = "publicCredential"
+
+    var credType = credential["type"]
+    if ((credType == "hcert") || (credType == "ukimmigration")) {
+        qrDisplayType = "single"
+    } else if (credential["decoded"]['body']['vc']['credentialSchema']['id'] == "publicCredential") {
+        qrDisplayType = "url"
+    } else {
+        qrDisplayType = "multi"
     }
+
+    console.log("QrTYPE", qrDisplayType)
     var credentialJWT = credential["encoded"]
 
     // The DOM element where the library will create the QR. Hidden to avoid flickering
@@ -608,11 +617,11 @@ async function passengerDisplayQR(page, credential) {
     elwidth = Math.min(screen.availWidth - 60, 350)
     mylog("Element width:", elwidth)
 
-    if (qrDisplayType == "ukimmigration") {
+    if (qrDisplayType == "single") {
 
         QRpieces = [credentialJWT]
 
-    } else if (qrDisplayType == "publicCredential") {
+    } else if (qrDisplayType == "url") {
         
         console.log("Display of public credential")
         QRpieces = ["https://www.lanzarotesafe.org/?pubid=" + credential["decoded"]['body']['uuid']]
@@ -654,8 +663,8 @@ async function QRDisplayTick(index) {
         currentPage = window.history.state.pageName
     }
     // Ckeck if we are running in the context of the page that initiated display
-    if (currentPage != "#passengerDisplayQR") {
-        // The user navigated out of the passengerDisplayQR page, should stop displaying QR
+    if (currentPage != "#displayQRPage") {
+        // The user navigated out of the displayQRPage page, should stop displaying QR
         // Return without activating the callback again, so it will stop
         mylog("Exiting QR timer")
         return
@@ -679,11 +688,12 @@ async function QRDisplayTick(index) {
         body = body + `0${index}|`
     }
 
-    if (qrDisplayType == "ukimmigration") {
+    console.log("DisplayType", qrDisplayType)
+    if (qrDisplayType == "single") {
 
         body = QRpieces[0]
 
-    } else if (qrDisplayType == "publicCredential") {
+    } else if (qrDisplayType == "url") {
 
         body = QRpieces[0]
         
@@ -715,12 +725,14 @@ async function QRDisplayTick(index) {
         }
     );
 
-    // Set the next timer for displaying the next piece of the QR
-    var nextIndex = index + 1
-    if (nextIndex >= QRpieces.length) {
-        nextIndex = 0
+    if (qrDisplayType == "multi") {
+        // Set the next timer for displaying the next piece of the QR
+        var nextIndex = index + 1
+        if (nextIndex >= QRpieces.length) {
+            nextIndex = 0
+        }
+        setTimeout(QRDisplayTick, frameSeparation, nextIndex)
     }
-    setTimeout(QRDisplayTick, frameSeparation, nextIndex)
 
 }
 
@@ -729,7 +741,7 @@ async function QRDisplayTick(index) {
 function btoaUrl(input) {
 
     // Encode using the standard Javascript function
-    astr = btoa(input)
+    let astr = btoa(input)
 
     // Replace non-url compatible chars with base64 standard chars
     astr = astr.replace(/\+/g, '-').replace(/\//g, '_');
@@ -743,7 +755,7 @@ function atobUrl(input) {
     input = input.replace(/-/g, '+').replace(/_/g, '/');
 
     // Decode using the standard Javascript function
-    bstr = decodeURIComponent(escape(atob(input)));
+    let bstr = decodeURIComponent(escape(atob(input)));
 
     return bstr;
 }
@@ -768,7 +780,7 @@ function decodeJWT(jwt) {
         components = jwt.split(".");
     } else {
         decoded.error = "Format error. Encoded credential is not a string"
-        myerror(decoded.erro)
+        myerror(decoded.error)
         return decoded;
     }    
 
@@ -797,19 +809,21 @@ function decodeJWT(jwt) {
     try {
         let schema = decoded['body']['vc']['credentialSchema']['id']        
     } catch (error) {
-        decoded.error = "Field does not exist in JWT (body, vc, credentialSchema, id)"
+        decoded.error = "Field does not exist in JWT (body->vc->credentialSchema->id)"
         myerror(decoded.error)
         return decoded;
     }
 
     // Check expiration (in seconds since January 1, 1970 00:00:00 UTC.)
     let expiration = decoded.body.exp
-    let now = Date.now() / 1000     // In seconds
-    let leeway = 60 * 60            // We allow a leeway of 1 hour in the comparison
-    // If it has expired more than one hour before now, give an error
-    if (expiration + leeway < now) {
-        decoded.error = "Expired certificate"
-        myerror(decoded.error)
+    if (expiration) {
+        let now = Date.now() / 1000     // In seconds
+        let leeway = 60 * 60            // We allow a leeway of 1 hour in the comparison
+        // If it has expired more than one hour before now, give an error
+        if (expiration + leeway < now) {
+            decoded.error = "Expired certificate"
+            myerror(decoded.error)
+        }
     }
 
     return decoded;
@@ -859,6 +873,22 @@ async function keyPairFingerprint(keyPair) {
 
 }
 
+// Generate the Peer DID for the user
+async function getOrGeneratePeerDID() {
+
+    // Check if we already have the peerDID in the database
+    var didData = await settingsGet("didData");
+    if (didData == null) {
+        didData = await generateDidPeer();
+        mylog(didData.did, didData.keyPair);
+        await settingsPut("didData", didData);
+    }
+
+    return didData;
+
+}
+
+
 // Generate a DID in format of Peer DID (see spec for details)
 // The key used is Elliptic but restricted to the one supported by browsers
 // in the standard crypto Subtle subsystem
@@ -889,100 +919,7 @@ async function generateDidPeer() {
 
 }
 
-// Generate a symmetric key for encrypting credentials when in transit
-// The credentials (and other material) will be encrypted when sent to the
-// Secure Messaging Server
-async function generateEncryptionKey() {
 
-    // Ask browser to create a symmetric key
-    var key = await crypto.subtle.generateKey(
-        {
-            name: "AES-GCM",
-            length: 256
-        },
-        true,
-        ["encrypt", "decrypt"]
-    );
-
-    // The JWK format is verbose, but the advantage is that it isself-describing
-    return keyJWK;
-
-}
-
-// Convert a key in CryptoKey (native) format to JWK format
-async function exportToJWK(key) {
-    // Export the key to the JWK format (see spec for details)
-    var keyJWK = await crypto.subtle.exportKey("jwk", key);
-    return keyJWK;
-}
-
-// Convert a private key in JWK format to CryptoKey (native) format
-async function importFromJWK(jwk) {
-
-    // Assume for the moment that it is a private key
-    var keyUsages = ["sign"];
-
-    // Check if it is a public key
-    // In that case, the field "d" should not exist
-    if (jwk["d"] == undefined) {
-        keyUsages = ["verify"];
-    }
-
-    // Perform the import
-    return await crypto.subtle.importKey(
-        "jwk",
-        jwk,
-        {
-            name: "ECDSA",
-            namedCurve: "P-384"
-        },
-        true,
-        keyUsages
-    );
-}
-
-// Encrypt a string message with a symmetric key
-async function encryptMessage(keyJWT, stringdata) {
-
-    // Encode the received string into UTF8 bytes
-    var enc = new TextEncoder();
-    var encodedBytes = enc.encode(stringdata);
-
-    // Generate the iv
-    // The iv must never be reused with a given key.
-    iv = crypto.getRandomValues(new Uint8Array(12));
-
-    // Perform the actual encryption
-    ciphertext = await crypto.subtle.encrypt(
-        {
-            name: "AES-GCM",
-            iv: iv
-        },
-        key,
-        encodedBytes
-    );
-
-    // Return the resulting ArrayBuffer, together with the iv
-    return { iv: iv, ciphertext: ciphertext };
-
-}
-
-async function decryptMessage(key, iv, ciphertext) {
-
-    // Perform the decryption of the received ArrayBuffer
-    var decrypted = await window.crypto.subtle.decrypt(
-        {
-            name: "AES-GCM",
-            iv: iv
-        },
-        key,
-        ciphertext
-    );
-
-    // We got UTF8 bytes, should decode into a string
-    var dec = new TextDecoder();
-    return dec.decode(decrypted);
-}
 
 
 async function didDocFromDid(did) {
@@ -1175,6 +1112,10 @@ function detectQRtype(prefix) {
     } else if (prefix.startsWith("multi|w3cvc|")) {
         // A multi-piece JWT
         return "MultiJWT"
+    } else if (prefix.startsWith("GFX")) {
+        // A multi-piece JWT
+        alert("Test Tube detected")
+        return "TestTube"
     } else if (prefix.startsWith("HC1:")) {
         console.log("HEALTH-HEALTH")
         return "HC1"
@@ -1251,6 +1192,9 @@ async function initiateReceiveQRScanning(_canvasElement, _qrMessageElement, _dis
     });
 
 }
+
+
+
 
 // This function is called periodically until we get a result from the scan
 // We use global variables to know the context on which it was called
@@ -1494,20 +1438,7 @@ async function ReceiveQRtick() {
         // Stop the media stream
         stopMediaTracks(myStream);
 
-        let certB45 = code.data.substring(4)
-        let certCompressed = decodeB45(certB45)
-        let certCOSE = pako.inflate(certCompressed)
-        let aux = new COSE(certCOSE)
-        let plain = aux.decode()
-        console.log(plain)
-
-        // The object plain is an array of 4 elements
-        // The third is the body of the credential, and we will decode it
-
-        let body = new COSE(plain[2])
-        body = body.cbor2json()
-        console.log(body)
-
+        let plain = CWT.decodeHC1QR(code.data)
 
         // Store in temporal storage so the page will retrieve it
         currentCredential = {
@@ -1515,7 +1446,7 @@ async function ReceiveQRtick() {
             encoded: code.data,
             decoded: plain
         }
-        await settingsPut.setItem("currentCredential", currentCredential);
+        await settingsPut("currentCredential", currentCredential);
 
         // Switch to the presentation of results
         gotoPage(displayQRPage, { screenType: callerType })
@@ -1606,12 +1537,12 @@ async function requestQRAndDisplay(targetURLRead, displayQRPage, callerType) {
 
     } catch (error) {
         myerror(error.responseText)
-        return
+        return;
     }
 
     // Switch to the presentation of results
     gotoPage(displayQRPage, { screenType: callerType })
 
-    return
+    return;
 
 }

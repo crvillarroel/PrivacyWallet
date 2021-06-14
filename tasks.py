@@ -80,10 +80,6 @@ def restartx(c, production=False):
     print(f"NGINX restarted")        
 
 
-################################################
-# PRODUCTION
-################################################
-
 
 @task
 def restart(c, production=False):
@@ -160,90 +156,48 @@ def check(c, production=False):
         print(f"Return code: {result.return_code}")
 
 
-
-@task
-def install_si2(c, production=False):
-    """Install backend. Can be executed as many times as wished
-    """
-
-    # Get the appropriate shell
-    sh = get_shell(production)
-
-    local_dir = "./"
-    remote_dir = "/home/ubuntu/si2"
-
-    # Create the application directory
-    sh.mkdir(remote_dir, parents=True, exist_ok=True)
- 
-    # Set the remote host
-    remote_host = "ubuntu@safeisland:" + remote_dir
-
-    # Copy all the files from the local machine
-    print(f"Copying application files")
-    rsync_args = ["rsync",
-        "-a",   # same as -rlptgoD: recurse, preserve links, permissions, modification times, group, owner, special files
-        "-u",   # skip files which exist on the destination and have a modified time that is newer than the source file
-        "-z",   # compress when transmitting
-        "-i",   # output a change-summary for all updates
-        "--exclude-from=rsync_exclude.txt",
-        local_dir,
-        remote_host
-    ]
-    result = sp.run(rsync_args,
-    capture_output=False, stdout=sys.stdout, stderr=sys.stderr,
-    text=True, check=False)
-
-
-    print("run the test")
-    result = sh.run(["which", "python3"],
-        cwd="/home/ubuntu/wallet", stdout=sys.stdout, stderr=sys.stderr,
-        allow_error=False)        
-
-
-    print(f"Installing Python requirements")
-    result = sh.run(["env"],
-        cwd=remote_dir, stdout=sys.stdout, stderr=sys.stderr,
-        allow_error=False)
-
-
-@task
-def upload_si2(c, production=False):
-    """Upload the SI2 app.
-    """
-
-    # Get the appropriate shell
-    sh = get_shell(production)
-
-    local_dir = "./"
-    remote_dir = "/home/ubuntu/si2"
-
-    # Create the application directory
-    sh.mkdir(remote_dir, parents=True, exist_ok=True)
- 
-    # Set the remote host
-    remote_host = "ubuntu@safeisland:" + remote_dir
-
-    # Copy all the files from the local machine
-    print(f"Copying application files")
-    rsync_args = ["rsync",
-        "-a",   # same as -rlptgoD: recurse, preserve links, permissions, modification times, group, owner, special files
-        "-u",   # skip files which exist on the destination and have a modified time that is newer than the source file
-        "-z",   # compress when transmitting
-        "-i",   # output a change-summary for all updates
-        "--exclude-from=rsync_exclude.txt",
-        local_dir,
-        remote_host
-    ]
-    result = sp.run(rsync_args,
-    capture_output=False, stdout=sys.stdout, stderr=sys.stderr,
-    text=True, check=False)
-
-
 @task
 def upload(c, production=False):
-    """Update the wallet
+    """Update the wallet and upgrade service worker
     """
 
+    # Copy "index.html" to "verifier.html", "pubcred.html", "admin.html" and "demo.html"
+    # They are convenience methods to invoke special functionality
+    e = shutil.copy2("www/index.html", "www/verifier.html")
+    print(f"Copied {e}")
+    e = shutil.copy2("www/index.html", "www/pubcred.html")
+    print(f"Copied {e}")
+    e = shutil.copy2("www/index.html", "www/admin.html")
+    print(f"Copied {e}")
+    e = shutil.copy2("www/index.html", "www/demo.html")
+    print(f"Copied {e}")
+
+    # Update locally the workbox files
+    c.run("workbox generateSW workbox-config.js")
+
+    sh = get_shell(production)
+
+    print("\n==> Synchronize testing frontend files")
+
+    local_dir = "www/"
+    remote_dir = "ubuntu@safeisland:/var/www/safeisland.hesusruiz.org/html"
+
+    rsync_args = ["rsync",
+        "-a",   # same as -rlptgoD: recurse, preserve links, permissions, modification times, group, owner, special files
+        "-u",   # skip files which exist on the destination and have a modified time that is newer than the source file
+        "-z",   # compress when transmitting
+        "-i",   # output a change-summary for all updates
+        "--exclude-from=rsync_exclude.txt",
+        local_dir,
+        remote_dir
+    ]
+    result = sp.run(rsync_args, capture_output=False, text=True, check=False)
+
+@task
+def uploaddev(c, production=False):
+    """Development: Update just the wallet
+    """
+    
     sh = get_shell(production)
 
     print("\n==> Synchronize testing frontend files")

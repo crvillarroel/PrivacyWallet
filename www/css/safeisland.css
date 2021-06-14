@@ -1,36 +1,140 @@
-.card, .button {
-    box-shadow: 0 .5em 1em -.125em rgba(10, 10, 10, .5), 0 0 0 1px rgba(10, 10, 10, .2);
+.jrmpage {
+    display: none;
 }
 
-#passengerQRScanCard {
-    padding-bottom: 0px;
-    padding-top: 0px;
+.containerjrm {
+    margin: auto;
 }
 
-/* #appNavbar {
-    background-color: #b2b2b2;
+.navbar.fixed-bottom {
+    justify-content: space-around;
+    margin: auto;
+}
+
+@media (min-width: 576px) {
+
+    .containerjrm,
+    .navbar.fixed-bottom {
+        max-width: 540px;
+    }
+}
+
+@media (min-width: 768px) {
+
+    .containerjrm,
+    .navbar.fixed-bottom {
+        max-width: 720px;
+    }
+}
+
+#issuerHome p {
+    margin-bottom: 0;
+    font-size: 0.8rem;
+}
+
+.placeHolder p {
+    margin-bottom: 0;
+}
+
+.hcert.title {
+    color:darkblue;
+    font-size: large;
+    font-weight: 600;
+}
+
+.hcert.subtitle {
+    color:darkblue;
+    font-weight: 500;
+}
+
+.etiqueta {
+    font-size: 0.9rem;
+    margin-bottom: 0;
+}
+
+.valor {
+    font-size: 1.1rem;
+    font-weight: 500;
+    margin-bottom: 0.4rem;
+}
+
+
+.fab {
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    box-shadow: 0 6px 10px 0 #666;
+    color: white;
+    font-size: 50px;
+    text-align: center;
+    line-height: 70px;
+    position: fixed;
+    bottom: 2rem;
+    right: 1.5rem;
+
+}
+
+#header {
+    margin-bottom: 0.7rem;
+
+}
+
+#realplaceholderQR {
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+a,
+button,
+h4,
+p {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    user-select: none;
+}
+
+/* .verified {
+    background-color: #d4edda;
+}
+
+.failed {
+    background-color: #f8d7da;
 } */
 
-html {
-    background-color: aliceblue;
+.logging {
+    font-size: 0.8rem;
+    margin-bottom: 0;
+    font-family: monospace;
 }
 
-.card-content, .button.is-primary {
-    background-color: #3700B3;
+.loggingError {
+    color: red;
+    font-size: 0.8rem;
+    font-weight: 500;
+    margin-bottom: 0;
+    font-family: monospace;
 }
 
-.card-content p {
-    color: white;
+#butInstall {
+    background-color: blue;
 }
 
-#passengerQRScanCard, #verifierQRScanCard {
-    background-color: white;
+/* .card-img-top {
+    height: 10rem;
+} */
+
+.key {
+    color: crimson;
+    font-weight: 700;
 }
 
-#appNavbar {
-    background-color: #03dac5;
+.number {
+    color: royalblue;
+    font-weight: 500;
 }
 
-#passengerDisplayQR .card-content {
-    background-color: white;
+.string {
+    color: green;
+    font-weight: 500;
 }

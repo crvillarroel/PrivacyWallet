@@ -222,20 +222,6 @@ class DGCKey {
         return decrypted;
     }
 
-    static btoaUrl(input) {
-        // Encode using the standard Javascript function
-        let astr = btoa(input)
-        // Replace non-url compatible chars with base64 standard chars
-        return astr.replace(/\+/g, '-').replace(/\//g, '_');
-    }
-
-    static atobUrl(input) {
-        // Replace non-url compatible chars with base64 standard chars
-        input = input.replace(/-/g, '+').replace(/_/g, '/');
-        // Decode using the standard Javascript function
-        return decodeURIComponent(escape(atob(input)));
-    }
-
 
 }
 
@@ -485,6 +471,57 @@ const MT_FLOAT = 7
 const CWT_ALG = 1
 const CWT_KID = 4
 
+// tg
+var diseaseTargeted = {
+    "840539006": "COVID-19",
+    get: function (key) {
+        if (!this[key]) {
+            return key;
+        }
+        return this[key]
+    }
+}
+
+// vp
+var vaccineProfilaxis = {
+    "1119305005": "SARS-CoV-2 antigen vaccine",
+    "1119349007": "SARS-CoV-2 mRNA vaccine",
+    "J07BX03": "covid-19 vaccines",
+    get: function (key) {
+        if (!this[key]) {
+            return key;
+        }
+        return this[key]
+    }
+}
+
+// mp
+var medicinalProduct = {
+    "EU/1/20/1528": "Comirnaty",
+    "EU/1/20/1507": "COVID-19 Vaccine Moderna",
+    "EU/1/21/1529": "Vaxzevria",
+    "EU/1/20/1525": "COVID-19 Vaccine Janssen",
+    get: function (key) {
+        if (!this[key]) {
+            return key;
+        }
+        return this[key]
+    }
+}
+
+// ma
+var manufacturer = {
+    "ORG-100030215": "BioNTech Manufacturing GmbH",
+    "ORG-100031184": "Moderna Biotech Spain S.L.",
+    "ORG-100001699": "AstraZeneca AB",
+    "ORG-100001417": "Janssen-Cilag International NV",
+    get: function (key) {
+        if (!this[key]) {
+            return key;
+        }
+        return this[key]
+    }
+}
 
 
 // For converting from string to byte array (Uint8Array) in UTF-8 and viceversa
@@ -1018,6 +1055,157 @@ CWT_ALG_TO_JWT.set(-7, 'ES256');
             return headers
         }
 
+        function decodePayloadAsObject(payload) {
+
+            // Decode and flatten the objects to facilitate presentation and validation
+
+            const CWT_ISS = 1
+            const CWT_SUB = 2
+            const CWT_AUD = 3
+            const CWT_EXP = 4
+            const CWT_NBF = 5
+            const CWT_IAT = 6
+            const CWT_CTI = 7
+
+            const HCERT = -260
+            const EU_DCC = 1
+            const T_VACCINATION = "v"
+            const T_TEST = "t"
+            const T_RECOVERY = "r"
+
+            // Make a copy to perform decoding
+            payload = payload.slice()
+            let decodedPayload = decode(payload.buffer)
+
+            payload = {}
+
+            for (let [key, value] of decodedPayload) {
+
+                switch (key) {
+                    case CWT_ISS:
+                        payload["iss"] = value
+                        break;
+                    case CWT_SUB:
+                        payload["sub"] = value
+                        break;
+                    case CWT_AUD:
+                        payload["aud"] = value
+                        break;
+                    case CWT_EXP:
+                        payload["exp"] = value
+                        break;
+                    case CWT_NBF:
+                        payload["nbf"] = value
+                        break;
+                    case CWT_IAT:
+                        payload["iat"] = value
+                        break;
+                    case CWT_CTI:
+                        payload["cti"] = value
+                        break;
+
+                    default:
+                        break;
+                }
+            }
+
+            // Check for HCERT in payload
+            let hcert = decodedPayload.get(HCERT)
+            if (hcert == undefined) { throw "No hcert found" }
+
+            // Check for EU COVID certificate inside HCERT
+            let euCovid = hcert.get(EU_DCC)
+            if (euCovid == undefined) { throw "No EU COVID certificate found" }
+
+            // Common fields
+            try {
+                // Schema version
+                payload["version"] = euCovid.get("ver")
+    
+                // The patient name
+                payload["foreName"] = euCovid.get("nam").get("fn")
+                payload["givenName"] = euCovid.get("nam").get("gn")
+                payload["fullName"] = payload["foreName"] + ", " + payload["givenName"]
+    
+                // Date of birth
+                payload["dateOfBirth"] = euCovid.get("dob")
+            } catch (error) {
+                throw `Error accessing required common fields: ${error}`
+            }
+
+            // Access the hcert depending on its type "v", "r", "t"
+            let c
+            if (euCovid.get("v")) {
+                payload["certType"] = T_VACCINATION
+                c = euCovid.get("v")[0]
+            } else if (euCovid.get("r")) {
+                payload["certType"] = T_RECOVERY
+                c = euCovid.get("r")[0]
+            } else if (euCovid.get("t")) {
+                payload["certType"] = T_TEST
+                c = euCovid.get("t")[0]
+            } else {
+                throw `Invalid EU COVID certificate type`
+            }
+
+            console.log("Source cert", c)
+
+
+            // Process each type of certificate
+            if (payload["certType"] === T_VACCINATION) {
+
+                // payload["diseaseTargeted"] = diseaseTargeted[c.get("tg")]
+                // payload["vaccineProphylaxis"] = vaccineProfilaxis[c.get("vp")]
+                // payload["medicinalProduct"] = medicinalProduct[c.get("mp")]
+                // payload["manufacturer"] = manufacturer[c.get("ma")]
+
+                payload["diseaseTargeted"] = diseaseTargeted.get(c.get("tg"))
+                payload["vaccineProphylaxis"] = vaccineProfilaxis.get(c.get("vp"))
+                payload["medicinalProduct"] = medicinalProduct.get(c.get("mp"))
+                payload["manufacturer"] = manufacturer.get(c.get("ma"))
+
+                payload["doseNumber"] = c.get("dn")
+                payload["doseTotal"] = c.get("sd")
+                payload["dateVaccination"] = c.get("dt")
+
+                payload["country"] = c.get("co")
+                payload["certificateIssuer"] = c.get("is")
+                payload["uniqueIdentifier"] = c.get("ci")
+
+            } else if (payload["certType"] === T_TEST) {
+
+                //payload["diseaseTargeted"] = diseaseTargeted[c.get("tg")]
+                payload["diseaseTargeted"] = diseaseTargeted.get(c.get("tg"))
+                
+                payload["typeTest"] = c.get("tt")
+                payload["testName"] = c.get("nm")
+                payload["manufacturer"] = manufacturer.get(c.get("ma"))
+
+                payload["timeSample"] = c.get("sc")
+                payload["testResult"] = c.get("tr")
+                payload["testingCentre"] = c.get("tc")
+
+                payload["country"] = c.get("co")
+                payload["certificateIssuer"] = c.get("is")
+                payload["uniqueIdentifier"] = c.get("ci")
+
+            } else if (payload["certType"] === T_RECOVERY) {
+
+                payload["diseaseTargeted"] = diseaseTargeted.get(c.get("tg"))
+                payload["datePositive"] = c.get("fr")
+                payload["dateFrom"] = c.get("df")
+                payload["dateUntil"] = c.get("du")
+
+                payload["country"] = c.get("co")
+                payload["certificateIssuer"] = c.get("is")
+                payload["uniqueIdentifier"] = c.get("ci")
+
+            }
+    
+            return payload;
+
+        }
+
         function decodePayload(payload) {
 
             const CWT_ISS = 1
@@ -1081,6 +1269,7 @@ CWT_ALG_TO_JWT.set(-7, 'ES256');
 
         }
 
+
         // Get the initial byte to check for a COSE Tag
         // Every COSE object should start with a TAG
         var initialByte = dataView.getUint8(0);
@@ -1099,17 +1288,26 @@ CWT_ALG_TO_JWT.set(-7, 'ES256');
         // Decode the object into an Array with 4 elements
         let [protectedHeaders, unprotectedHeaders, payload, signature] = decode(data)
 
-        // Decode the headers, protected and unprotected
+        // Decode and join the headers, protected and unprotected
         let headers = decodeHeaders(protectedHeaders, unprotectedHeaders)
 
         // Decode the payload
-        payload = decodePayload(payload)
+        payload = decodePayloadAsObject(payload)
+        console.log("Payload:", payload)
 
         return [headers, payload, signature];
     }
 
-    function decodeQR(data) {
+    function decodeHC1QR(data) {
         // data: string obtained from a QR scan
+
+        // Check if the string is a HC1 certificate
+        if (!data.startsWith("HC1:")) {
+            throw "Certificate does not start with 'HC1:'"
+        }
+
+        // Remove the leading 4 chars: "HC1:"
+        data = data.slice(4)
 
         // First decode from Base45
         let cvdCompressed = decodeB45(data)
@@ -1129,20 +1327,314 @@ CWT_ALG_TO_JWT.set(-7, 'ES256');
         encode: encode,
         decode: decode,
         decodeCWT: decodeCWT,
-        decodeQR: decodeQR,
+        decodeHC1QR: decodeHC1QR,
         verifyCWT: verifyCWT
     };
 
     if (typeof define === "function" && define.amd) {
-        console.log("define == function")
         define("cwt/cwt", obj);
     } else if (typeof module !== "undefined" && module.exports) {
-        console.log("module")
         module.exports = obj;
     } else if (!global.CWT) {
-        console.log(global)
         global.CWT = obj;
     }
 
 })(this);
+
+
+class HCERT {
+
+    constructor() {
+    }
+
+    static renderSummary(key, cred) {
+
+        // The credential
+        let payload = cred["decoded"][1]
+
+        // Calculate the display name and date for the card
+        let displayName = "Unrecognized"
+        let cred_date = "Unrecognized"
+
+        if (payload["certType"] == "v") {
+            displayName = "EU COVID VACCINATION"
+            cred_date = payload.dateVaccination
+        } else if (payload["certType"] == "t") {
+            displayName = "EU COVID TEST"
+            cred_date = payload.timeSample
+        } else if (payload["certType"] == "r") {
+            displayName = "EU COVID RECOVERY"
+            cred_date = payload.dateFrom
+        }
+
+        // Render the HTML
+        let html = `
+        <div class="card my-3 shadow">
+            <a onclick="displayCredentialFromKey('${key}')">
+            <div class="card-body">
+                <h5 class="card-title">${payload.fullName}</h5>
+                <p>${displayName}</p>
+                <p>${cred_date}</p>
+            </div>
+            </a>
+        </div>
+        `
+
+        return html
+        
+    }
+
+    static renderDetail(cred) {
+
+        // The credential
+        let payload = cred["decoded"][1]
+
+        // Calculate the display name and date for the card
+        let displayName = "Unrecognized"
+        let cred_date = "Unrecognized"
+
+        let html = "Unrecognized"
+
+
+        if (payload["certType"] == "v") {
+
+            html = `
+            <div class="container mb-2 border bg-light">
+                <div class="hcert title">EU DIGITAL COVID CERTIFICATE</div>
+                <div class="hcert subtitle">Vaccination</div>
+            </div>
+
+            <div class="container mb-2 border">
+                <div class="mb-2">
+                    <div class="etiqueta mt-3">Name</div>
+                    <div class="valor mb-3">${payload.fullName}</div>
+                </div>
+                <div>
+                    <div class="etiqueta">Date of birth</div>
+                    <div class="valor">${payload.dateOfBirth}</div>
+                </div>
+            </div>
+
+            <div class="container">
+                <div class="hcert subtitle">Vaccination details</div>
+            </div>
+
+            <div class="container mb-2 border">
+                <div class="row">
+                    <div class="col">
+                        <div class="etiqueta mt-3">Certificate identifier</div>
+                        <div class="etiqueta mb-3 text-break"><strong>${payload.uniqueIdentifier}</strong></div>
+
+                        <div class="etiqueta">Certificate issuer</div>
+                        <div class="valor">${payload.certificateIssuer}</div>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="container mb-2 border">
+                <div class="row">
+                    <div class="col">
+                        <div class="etiqueta mt-3">Disease targeted</div>
+                    </div>
+                    <div class="col">
+                        <div class="valor mt-3">${payload.diseaseTargeted}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="container border">
+
+                <div class="row mb-3">
+
+                    <div class="col-sm">
+                        <div class="etiqueta mt-3">Vaccine/profilaxis targeted</div>
+                        <div class="valor mb-3">${payload.vaccineProphylaxis}</div>
+
+                        <div class="etiqueta">Vaccine medicinal product</div>
+                        <div class="valor mb-3">${payload.medicinalProduct}</div>
+
+                        <div class="etiqueta">Manufacturer</div>
+                        <div class="valor">${payload.manufacturer}</div>
+
+                    </div>
+
+                    <div class="col-sm">
+                        <div class="etiqueta mt-3">Dose number/Total doses</div>
+                        <div class="valor mb-3">${payload.doseNumber}/${payload.doseTotal}</div>
+
+                        <div class="etiqueta">Date of vaccination</div>
+                        <div class="valor mb-3">${payload.dateVaccination}</div>
+
+                        <div class="etiqueta">Member State of vaccination</div>
+                        <div class="valor">${payload.country}</div>
+                    </div>
+                </div>
+
+            </div>
+            `
+        }
+
+
+        if (payload["certType"] == "t") {
+
+            html = `
+            <div class="container mb-2 border bg-light">
+                <div class="hcert title">EU DIGITAL COVID CERTIFICATE</div>
+                <div class="hcert subtitle">Test</div>
+            </div>
+
+            <div class="container mb-2 border">
+                <div class="mb-2">
+                    <div class="etiqueta mt-3">Name</div>
+                    <div class="valor mb-3">${payload.fullName}</div>
+                </div>
+                <div>
+                    <div class="etiqueta">Date of birth</div>
+                    <div class="valor">${payload.dateOfBirth}</div>
+                </div>
+            </div>
+
+            <div class="container">
+                <div class="hcert subtitle">Test details</div>
+            </div>
+
+            <div class="container mb-2 border">
+                <div class="row">
+                    <div class="col">
+                        <div class="etiqueta mt-3">Certificate identifier</div>
+                        <div class="etiqueta mb-3 text-break"><strong>${payload.uniqueIdentifier}</strong></div>
+
+                        <div class="etiqueta">Certificate issuer</div>
+                        <div class="valor">${payload.certificateIssuer}</div>        
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="container mb-2 border">
+                <div class="row">
+                    <div class="col">
+                        <div class="etiqueta mt-3">Disease targeted</div>
+                    </div>
+                    <div class="col">
+                        <div class="valor mt-3">${payload.diseaseTargeted}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="container border">
+
+                <div class="row mb-3">
+
+                    <div class="col-sm">
+                        <div class="etiqueta mt-3">Type of Test</div>
+                        <div class="valor mb-3">${payload.typeTest}</div>
+
+                        <div class="etiqueta">NAA Test Name</div>
+                        <div class="valor mb-3">${payload.testName}</div>
+
+                        <div class="etiqueta">Manufacturer</div>
+                        <div class="valor">${payload.manufacturer}</div>
+
+                    </div>
+
+                    <div class="col-sm">
+                        <div class="etiqueta mt-3">Test Result</div>
+                        <div class="valor mb-3">${payload.testResult}</div>
+
+                        <div class="etiqueta">Date/Time of Sample Collection</div>
+                        <div class="valor mb-3">${payload.timeSample}</div>
+
+                        <div class="etiqueta">Testing Centre</div>
+                        <div class="valor">${payload.testingCentre}</div>
+                    </div>
+                </div>
+
+            </div>
+            `
+        }
+
+
+        if (payload["certType"] == "r") {
+            html = `
+            <div class="container mb-2 border bg-light">
+                <div class="hcert title">EU DIGITAL COVID CERTIFICATE</div>
+                <div class="hcert subtitle">Recovery</div>
+            </div>
+            
+            <div class="container mb-2 border">
+                <div class="mb-2">
+                    <div class="etiqueta mt-3">Name</div>
+                    <div class="valor mb-3">${payload.fullName}</div>
+                </div>
+                <div>
+                    <div class="etiqueta">Date of birth</div>
+                    <div class="valor">${payload.dateOfBirth}</div>
+                </div>
+            </div>
+            
+            <div class="container">
+                <div class="hcert subtitle">Recovery details</div>
+            </div>
+            
+            <div class="container mb-2 border">
+                <div class="row">
+                  <div class="col">
+                    <div class="etiqueta mt-3">Disease targeted</div>
+                  </div>
+                  <div class="col">
+                    <div class="valor mt-3">${payload.diseaseTargeted}</div>
+                  </div>
+                </div>
+            </div>
+            
+            
+            <div class="container border">
+            
+                <div class="row mb-3">
+            
+                    <div class="col-sm">
+                        <div class="etiqueta mt-3">Date of positive</div>
+                        <div class="valor mb-3">${payload.datePositive}</div>
+                    </div>            
+            
+                    <div class="col-sm">
+                        <div class="etiqueta mt-3">Valid from</div>
+                        <div class="valor mb-3">${payload.dateFrom}</div>
+                    </div>
+            
+                    <div class="col-sm">
+                        <div class="etiqueta mt-3">Valid to</div>
+                        <div class="valor">${payload.dateUntil}</div>
+                    </div>
+            
+                </div>
+            
+            </div>
+            
+            <div class="container mb-2 border">
+                <div class="row">
+                    <div class="col">
+                        <div class="etiqueta mt-3">Certificate identifier</div>
+                        <div class="etiqueta mb-3 text-break"><strong>${payload.uniqueIdentifier}</strong></div>
+            
+                        <div class="etiqueta">Certificate issuer</div>
+                        <div class="valor">${payload.certificateIssuer}</div>        
+            
+                        <div class="etiqueta">Country of Test</div>
+                        <div class="valor">${payload.country}</div>        
+            
+                    </div>
+            
+                </div>
+            </div>
+            `
+        }
+        
+        return html
+
+    }
+
+}
 
