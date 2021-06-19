@@ -38,14 +38,15 @@ class DGCKey {
         const extractable = true
         const format = "jwk"
         const keyType = jwk["kty"]
+        let algorithm
 
         if (keyType == "EC") {
-            const algorithm = {
+            algorithm = {
                 name: "ECDSA",
                 namedCurve: "P-256"
             }    
         } else if (keyType == "RSA") {
-            const algorithm = {
+            algorithm = {
                 name: "RSA-PSS",
                 hash: "SHA-256"
             }
@@ -163,16 +164,25 @@ class DGCKey {
             throw new Error("Not a public key")
         }
 
-        let result = await window.crypto.subtle.verify(
-            {
-                name: "ECDSA",
-                hash: { name: "SHA-256" },
-            },
-            key,
-            signature,
-            bytes
-        );
+        console.log("Inside VERIFY", key)
 
+        try {
+            let result = await window.crypto.subtle.verify(
+                {
+                    name: "ECDSA",
+                    hash: { name: "SHA-256" },
+                },
+                key,
+                signature,
+                bytes
+            );
+            
+        } catch (error) {
+            throw `Verification of payload failed: ${error}`
+        }
+
+
+        console.log("Result:", result)
         return result
     }
 
@@ -531,6 +541,7 @@ const utf8Decoder = new TextDecoder()
 // Mapping from COSE Tags to COSE algorithm name
 var CWT_ALG_TO_JWT = new Map();
 CWT_ALG_TO_JWT.set(-7, 'ES256');
+CWT_ALG_TO_JWT.set(-37, 'RSA');
 
 
 (function (global, undefined) {
@@ -718,44 +729,40 @@ CWT_ALG_TO_JWT.set(-7, 'ES256');
 
     }
 
-    async function verifyCWT(_cwt, verifier) {
+    async function verifyCWT(_cwt, verificationKey) {
         // Verify the CWT object using the key specified by the "verifier"
         // The verifier should be a JWK object with the public key
         // The method is async because we call async crypto methods (SubtleCrypto)
 
         // Decode the object into an Array with 4 elements
         let [ph, uph, payload, signature] = decode(_cwt)
-        console.log("ph", ph)
-        console.log("uph", uph)
-        console.log("payl", payload)
 
+        // Zero-length bstr
+        let zeroBstr = new Uint8Array(0)
 
         // Create the Sig_structure
         const Sig_structure = [
             "Signature1",
             ph,
-            uph,
+            zeroBstr,
             payload
         ];
 
         // And CBOR-encode it
         let Sig_structure_encoded = encode(Sig_structure)
 
-        // Check that it was well built
-        console.log("===================")
-        console.log(Sig_structure_encoded)
-        let [ph2, uph2, payload2, signature2] = decode(Sig_structure_encoded)
-        console.log("ph", ph2)
-        console.log("uph", uph2)
-        console.log("payl", payload2)
-        console.log("===================")
-
         // Get the crypto algorithm to use, checking that is is supported
 
         // Verify the signature
-//        let verified = await verifier.verify(signature, Sig_structure_encoded)
+        let verified = false
+        try {
+            verified = await DGCKey.verify(verificationKey, signature, Sig_structure_encoded)            
+            console.log("VERIFIED:", verified)
+        } catch (error) {
+            console.log("ERROR:", error)
+        }
 
-
+        return verified
 
     }
 
@@ -980,7 +987,7 @@ CWT_ALG_TO_JWT.set(-7, 'ES256');
         return ret;
     }
 
-    function decodeCWT(data, tagger, simpleValue) {
+    async function decodeCWT(data, verify) {
         var dataView = new DataView(data);
 
         function decodeHeadersOld(protectedHeaders, unprotectedHeaders) {
@@ -1037,8 +1044,15 @@ CWT_ALG_TO_JWT.set(-7, 'ES256');
             let newProtectedHeaders = protectedHeaders.slice()
             let headers = decode(newProtectedHeaders.buffer)
 
-            // Check if we have all required headers
-            if (headers.get(CWT_ALG) === undefined) {throw "Missing algorithm in protected headers"}
+            // Check if we have the algorithm in the protected header
+            let alg_number = headers.get(CWT_ALG)
+            if (alg_number === undefined) {throw "Missing algorithm in protected headers"}
+            let alg_string = CWT_ALG_TO_JWT.get(alg_number)
+            if (alg_string === undefined) {throw `Invalid algorithm specified: ${alg_number}`}
+
+            // Create a standard Javascript object
+            let headers_obj = {}
+            headers_obj["alg"] = alg_string
 
             // Check for kid in protectedHeaders, otherwise in unprotectedHeaders.
             // It is an error if it is not in either
@@ -1049,10 +1063,15 @@ CWT_ALG_TO_JWT.set(-7, 'ES256');
             }
             if (kid === undefined) {throw "Missing kid in headers"}
 
-            // Just in case kid was in unprotectedHeaders
-            headers.set(CWT_KID, kid)
+            // Encode the kid to base64
+            let kid_str = ""
+            for (let i = 0; i < kid.length; i++) {
+                kid_str = kid_str + String.fromCodePoint(kid[i])
+            }
+            kid_str = window.btoa(kid_str)
+            headers_obj["kid"] = kid_str
 
-            return headers
+            return headers_obj
         }
 
         function decodePayloadAsObject(payload) {
@@ -1147,9 +1166,6 @@ CWT_ALG_TO_JWT.set(-7, 'ES256');
             } else {
                 throw `Invalid EU COVID certificate type`
             }
-
-            console.log("Source cert", c)
-
 
             // Process each type of certificate
             if (payload["certType"] === T_VACCINATION) {
@@ -1285,20 +1301,46 @@ CWT_ALG_TO_JWT.set(-7, 'ES256');
             throw new Error(`Not a COSE Single signature, tag: ${additionalInformation}`)
         }
 
+        // get rid of the tag
+        data = data.slice(1)
+
         // Decode the object into an Array with 4 elements
         let [protectedHeaders, unprotectedHeaders, payload, signature] = decode(data)
 
         // Decode and join the headers, protected and unprotected
         let headers = decodeHeaders(protectedHeaders, unprotectedHeaders)
 
+        // The flag indicating result of verification (if done)
+        let verified = false
+
+        if (verify) {
+
+            // Get the kid from the header (can be in protected and in unprotected)
+            let kid = headers["kid"]
+
+            // Search in the list of keys
+            let certEntry = dccPublicKeys.get(kid)
+            if (!certEntry) {
+                console.log("HCERT KID NOT IN LIST")
+            } else {
+                console.log("HCERT KID  FOUND!!!!!")
+                // Create the native public key
+                let verificationKey = await DGCKey.fromJWK(certEntry["jwk"])
+
+                verified = await verifyCWT(data, verificationKey)
+            }
+
+
+        }
+
         // Decode the payload
         payload = decodePayloadAsObject(payload)
         console.log("Payload:", payload)
 
-        return [headers, payload, signature];
+        return [headers, payload, signature, verified];
     }
 
-    function decodeHC1QR(data) {
+    async function decodeHC1QR(data, verify=false) {
         // data: string obtained from a QR scan
 
         // Check if the string is a HC1 certificate
@@ -1317,18 +1359,74 @@ CWT_ALG_TO_JWT.set(-7, 'ES256');
         let coseCVD = pako.inflate(cvdCompressed)
 
         // coseCVD is the CWT-encoded CVD
-        let [headers, payload, signature] = decodeCWT(coseCVD.buffer)
+        let [headers, payload, signature, verified] = await decodeCWT(coseCVD.buffer, verify)
 
-        return [headers, payload, signature];
+        return [headers, payload, signature, verified];
 
     }
+
+
+    function displayMB(ib) {
+        var majorType = ib >> 5;
+        var additionalInformation = ib & 0x1f;
+        var i;
+        var length = additionalInformation
+
+        if (majorType === MT_FLOAT) {
+            console.log("FLOAT")
+        }
+
+        switch (majorType) {
+            case MT_INTEGER:
+                console.log(`Integer ${length}`)
+                return;
+            case MT_NEGINTEGER:
+                console.log(`Negative Integer ${-1 - length}`)
+                return;
+            case MT_BYTES:
+                console.log(`Bstr ${length}`)
+                return `Bstr ${length}`;
+            case MT_UTF8:
+                console.log(`String ${length}`)
+                return;
+            case MT_ARRAY:
+                console.log(`Array ${length}`)
+                return;
+            case MT_MAP:
+                console.log(`Map ${length}`)
+                return;
+            case MT_TAG:
+                console.log(`Tag ${length}`)
+                return;
+            case 7:
+                switch (length) {
+                    case 20:
+                        console.log(`FALSE`)
+                        return;
+                    case 21:
+                        console.log(`TRUE`)
+                        return;
+                    case 22:
+                        console.log(`NULL`)
+                        return;
+                    case 23:
+                        console.log(`UNDEFINED`)
+                        return;
+                    default:
+                        console.log(`Simple Value`)
+                        return;
+                }
+        }
+    }
+
 
     var obj = {
         encode: encode,
         decode: decode,
         decodeCWT: decodeCWT,
         decodeHC1QR: decodeHC1QR,
-        verifyCWT: verifyCWT
+        verifyCWT: verifyCWT,
+        displayMB: displayMB
     };
 
     if (typeof define === "function" && define.amd) {
@@ -1347,7 +1445,7 @@ class HCERT {
     constructor() {
     }
 
-    static renderSummary(key, cred) {
+    static async renderSummary(key, cred) {
 
         // The credential
         let payload = cred["decoded"][1]

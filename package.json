@@ -1,0 +1,38 @@
+{
+  "name": "privacywallet",
+  "version": "1.0.0",
+  "description": "A privacy-preserving wallet",
+  "main": "mystart.js",
+  "scripts": {
+    "echo": "echo $npm_config_pepe",
+    "start": "web-dev-server --open --node-resolve --root-dir www/",
+    "start:watch": "web-dev-server --open --node-resolve --root-dir www/ --watch",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "upload": "rsync -auzi --exclude-from=rsync_exclude.txt www/ ubuntu@safeisland:/var/www/safeisland.hesusruiz.org/html",
+    "workbox": "workbox generateSW workbox-config.js",
+    "build": "rollup -c",
+    "deploy": "npm run workbox && npm run upload"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hesusruiz/PrivacyWallet.git"
+  },
+  "keywords": [
+    "privacy",
+    "hcert"
+  ],
+  "author": "Jesus Ruiz",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/hesusruiz/PrivacyWallet/issues"
+  },
+  "homepage": "https://github.com/hesusruiz/PrivacyWallet#readme",
+  "dependencies": {
+    "lit": "^2.0.0-rc.2"
+  },
+  "devDependencies": {
+    "@web/dev-server": "^0.1.17",
+    "eslint": "^7.28.0",
+    "rollup": "^2.52.1"
+  }
+}
