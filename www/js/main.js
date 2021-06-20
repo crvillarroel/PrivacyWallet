@@ -1,6 +1,7 @@
 "use strict";
 
 import {
+  db,
   mylog,
   myerror,
   settingsPut,
@@ -21,6 +22,7 @@ import {
 
 import { decodeJWT } from "./credential.js";
 import { initiateReceiveQRScanning } from "./scanqr.js";
+import { CWT, HCERT, vs } from "./cwt.js"
 
 window.displayCredentialFromKey = displayCredentialFromKey;
 window.transferViaQR = transferViaQR;
@@ -185,6 +187,27 @@ function logAppInstalled(evt) {
 async function performAppUpgrade() {
   console.log("Performing Upgrade");
 
+  try {
+    // Get the new version of the application
+    var newVersion = await $.get("/VERSION.txt");
+    if (newVersion) {
+      await settingsPut("VERSION", newVersion);
+    }
+  } catch (error) {
+    console.log("ERROR updating version", error)
+  }
+
+  // Get the value sets
+  try {
+    var valueSets = await $.get("assets/value-sets.json")
+    await settingsPut("valueSets", valueSets);
+    vs.init(valueSets)
+  } catch (error) {
+    console.log("ERROR getting the value sets", error);
+  }
+
+  console.log(valueSets)
+
   // Refresh the screen so the user sees the new pages
   window.location.reload();
 
@@ -203,6 +226,10 @@ async function performOneTimeInitialization() {
   for (let i = 0; i < keys.length; i++) {
     dccPublicKeys.set(keys[i]["kid"], keys[i]);
   }
+
+  // Set the valueSet variable
+  let valSet = await settingsGet("valueSets")
+  vs.init(valSet)
 
   // Check if this is the first time that the user downloads the app
   // There is a persistent flag in the local storage
@@ -769,14 +796,20 @@ function formatDate(timestamp) {
   return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
+
 // ******************************************************
 pages["#displayCredentialPage"] = async function (pageData) {
   console.log("=> Inside #displayCredentialPage", pageData);
 
-  // Set the arrow back on the header
-  headerBrandBack(true);
+  // Get the credential that the caller put in temporary storage
+  let credential = await settingsGet("currentCredential");
+  if (!credential) {
+    showError("No credential in temporary storage");
+    return;
+  }
+  console.log("Presenting credential", credential);
 
-  var thisPage = document.querySelector("#displayCredentialPage");
+  let thisPage = document.querySelector("#displayCredentialPage")
 
   // Determine the screen type to use, depending on caller
   let screenType = ST_NORMAL;
@@ -799,13 +832,6 @@ pages["#displayCredentialPage"] = async function (pageData) {
   thisPage.querySelector("#placeHolder").classList.remove("failed");
   thisPage.querySelector("#placeHolder").classList.remove("verified");
 
-  // Get the credential that the caller put in temporary storage
-  let credential = await settingsGet("currentCredential");
-  if (!credential) {
-    showError("No credential in temporary storage");
-    return;
-  }
-  console.log("Presenting credential", credential);
 
   if (screenType == ST_NORMAL) {
     // Screen used to display user credentials from the local store
@@ -839,20 +865,22 @@ pages["#displayCredentialPage"] = async function (pageData) {
   }
 
   // Get the type of credential we have to display
-  // Currently we only process two types: "ukimmigration"
-  // and any subtype of "w3cvc"
 
   console.log("Cred type", credential["type"]);
 
   if (credential["type"] == "hcert") {
+    let hcert
+
     // Verify the credential if we were called from the Verifier
     if (screenType == ST_VERIFIER_SCAN) {
       // We are invoked after the verifier has scanned a QR
 
-      let [headers, payload, signature, verified] = await CWT.decodeHC1QR(
+      // Decode credential verifying it at the same time
+      hcert = await CWT.decodeHC1QR(
         credential["encoded"],
         true
       );
+      let verified = hcert[3]
 
       // Display message depending on the result of verification
       if (!verified) {
@@ -864,9 +892,18 @@ pages["#displayCredentialPage"] = async function (pageData) {
         thisPage.querySelector("#alertCredentialSuccess").style.display = "";
         thisPage.querySelector("#placeHolder").classList.add("verified");
       }
+    } else {
+
+      // Decode credential without verification
+      hcert = await CWT.decodeHC1QR(
+        credential["encoded"],
+        false
+      );
+
     }
 
-    let html = HCERT.renderDetail(credential);
+    // Render the credential
+    let html = HCERT.renderDetail(hcert);
 
     // Set the generated HTML into the page element
     thisPage.querySelector("#placeHolder").innerHTML = html;
@@ -1014,6 +1051,13 @@ pages["#displayQRPage"] = async function (pageData) {
 
   headerBrandBack(true);
   var thisPage = document.querySelector("#displayQRPage");
+
+  // Get the DOM element where we will display the QR and erase any previous content
+  // We use this to avoid flickering when QRs are of different sizes
+  realqrelement = thisPage.querySelector("#realplaceholderQR");
+  realqrelement.style.display = "none";
+  realqrelement.setAttribute("src", "");  
+
   var credential = await settingsGet("currentCredential");
 
   var credType = credential["type"];
@@ -1036,10 +1080,6 @@ pages["#displayQRPage"] = async function (pageData) {
   console.log("Unreal: ", qrelement);
   qrelement.style.display = "none";
 
-  // The DOM element where we will display the QR.
-  // We use this to avoid flickering when QRs are of different sizes
-  realqrelement = thisPage.querySelector("#realplaceholderQR");
-  console.log("Real: ", realqrelement);
 
   // We will tell the QR library to generate a QR with the width of the DOM element
   //    elwidth = Math.floor($(realqrelement).width())
@@ -1126,14 +1166,18 @@ async function QRDisplayTick(index) {
     qrelement, // Place to display QR image
     {
       drawer: "canvas",
-      height: elwidth,
-      width: elwidth,
+      // height: elwidth,
+      // width: elwidth,
+      height: 500,
+      width: 500,
       text: body, // Contents of the QR
       onRenderingStart: function (options) {},
       onRenderingEnd: function (options, dataURL) {
         var imageQR = document.querySelector("#realplaceholderQR");
         imageQR.setAttribute("src", dataURL);
-        imageQR.style.width = elwidth;
+        imageQR.style.width = elwidth + "px";
+        imageQR.style.display = "";
+
       },
     }
   );
@@ -1712,7 +1756,7 @@ pages["#logsPage"] = async function (pageData) {
   // Populate the credential list in the page
   var placeHolder = document.querySelector("#logsPage .placeHolder");
 
-  var rlogs = recentLogs();
+  var rlogs = await recentLogs();
 
   var h = "";
   for (let i = 0; i < rlogs.length; i++) {
@@ -1728,7 +1772,7 @@ pages["#logsPage"] = async function (pageData) {
     let minutes = ts.getMinutes().toString().padStart(2, "0");
     let seconds = ts.getSeconds().toString().padStart(2, "0");
 
-    timestamp = month + day + "-" + hours + minutes + seconds;
+    let timestamp = month + day + "-" + hours + minutes + seconds;
     let desc = rlogs[i].desc;
     let item = rlogs[i].item;
 
@@ -1762,29 +1806,29 @@ pages["#diagnosticsPage"] = async function (pageData) {
   h.innerHTML += `<p style="margin-bottom: 0">Screen width: ${screen.width}</p>`;
   h.innerHTML += `<p style="margin-bottom: 0">Screen height: ${screen.height}</p>`;
   h.innerHTML += `<p style="margin-bottom: 0">Screen availWidth: ${screen.availWidth}</p>`;
-  h.innerHTML += `<p style="margin-bottom: 0">Screen availHeight: ${screen.availHeight}</p>`;
+  h.innerHTML += `<p style="margin-bottom: 10px">Screen availHeight: ${screen.availHeight}</p>`;
 
-  el = document.querySelector("html");
+  let el = document.querySelector("html");
   h.innerHTML += `<p style="margin-bottom: 0">Html offsetHeight: ${el.offsetHeight}</p>`;
   h.innerHTML += `<p style="margin-bottom: 0">Html offsetWidth: ${el.offsetWidth}</p>`;
   h.innerHTML += `<p style="margin-bottom: 0">Html clientHeight: ${el.clientHeight}</p>`;
-  h.innerHTML += `<p style="margin-bottom: 0">Html clientWidth: ${el.clientWidth}</p>`;
+  h.innerHTML += `<p style="margin-bottom: 10px">Html clientWidth: ${el.clientWidth}</p>`;
 
   el = document.querySelector("body");
   h.innerHTML += `<p style="margin-bottom: 0">Body offsetHeight: ${el.offsetHeight}</p>`;
   h.innerHTML += `<p style="margin-bottom: 0">Body offsetWidth: ${el.offsetWidth}</p>`;
   h.innerHTML += `<p style="margin-bottom: 0">Body clientHeight: ${el.clientHeight}</p>`;
-  h.innerHTML += `<p style="margin-bottom: 0">Body clientWidth: ${el.clientWidth}</p>`;
+  h.innerHTML += `<p style="margin-bottom: 10px">Body clientWidth: ${el.clientWidth}</p>`;
 
   el = document.querySelector("#header");
   h.innerHTML += `<p style="margin-bottom: 0">Header offsetHeight: ${el.offsetHeight}</p>`;
   h.innerHTML += `<p style="margin-bottom: 0">Header offsetWidth: ${el.offsetWidth}</p>`;
   h.innerHTML += `<p style="margin-bottom: 0">Header clientHeight: ${el.clientHeight}</p>`;
-  h.innerHTML += `<p style="margin-bottom: 0">Header clientWidth: ${el.clientWidth}</p>`;
+  h.innerHTML += `<p style="margin-bottom: 10px">Header clientWidth: ${el.clientWidth}</p>`;
 
-  h.innerHTML += `<h1>Example text</h1>`;
-  h.innerHTML += `<h2>Example text</h2>`;
-  h.innerHTML += `<h3>Example text</h3>`;
-  h.innerHTML += `<h4>Example text</h4>`;
-  h.innerHTML += `<h5>Example text</h5>`;
+  h.innerHTML += `<h1>This is h1</h1>`;
+  h.innerHTML += `<h2>This is h2</h2>`;
+  h.innerHTML += `<h3>This is h3</h3>`;
+  h.innerHTML += `<h4>This is h4</h4>`;
+  h.innerHTML += `<h5>This is h5</h5>`;
 };

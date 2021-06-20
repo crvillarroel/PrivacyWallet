@@ -21,6 +21,8 @@ import {
   credentialsGetAllKeys,
 } from "./db.js";
 
+import { CWT } from "./cwt.js"
+
 // Scan interval in ms
 const scanRefreshInterval = 50;
 
@@ -398,6 +400,7 @@ async function ReceiveQRtick(qrScan) {
       mylog("Scanned HC1 QR");
 
       let plain = await CWT.decodeHC1QR(code.data);
+      console.log("CWT.decodeHC1QR", plain)
 
       // Store in temporal storage so the page will retrieve it
       let currentCredential = {
@@ -443,6 +446,7 @@ async function ReceiveQRtick(qrScan) {
     // Stop the media stream
     stopMediaTracks(myStream);
 
+    console.error(error)
     alert(`Error: ${error}`)
 
     // Go to the home page to start again

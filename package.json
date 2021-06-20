@@ -11,7 +11,7 @@
     "upload": "rsync -auzi --exclude-from=rsync_exclude.txt www/ ubuntu@safeisland:/var/www/safeisland.hesusruiz.org/html",
     "workbox": "workbox generateSW workbox-config.js",
     "build": "rollup -c",
-    "deploy": "npm run workbox && npm run upload"
+    "deploy": "node bump && npm run workbox && npm run upload"
   },
   "repository": {
     "type": "git",
