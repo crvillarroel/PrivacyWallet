@@ -216,4 +216,40 @@ def uploaddev(c, production=False):
     ]
     result = sp.run(rsync_args, capture_output=False, text=True, check=False)
 
+@task
+def uploadgene(c, production=False):
+    """GENCAT - Update the wallet and upgrade service worker
+    """
+
+    # Copy "index.html" to "verifier.html", "pubcred.html", "admin.html" and "demo.html"
+    # They are convenience methods to invoke special functionality
+    e = shutil.copy2("www/index.html", "www/verifier.html")
+    print(f"Copied {e}")
+    e = shutil.copy2("www/index.html", "www/pubcred.html")
+    print(f"Copied {e}")
+    e = shutil.copy2("www/index.html", "www/admin.html")
+    print(f"Copied {e}")
+    e = shutil.copy2("www/index.html", "www/demo.html")
+    print(f"Copied {e}")
+
+    # Update locally the workbox files
+    c.run("workbox generateSW workbox-config.js")
+
+    sh = get_shell(production)
+
+    print("\n==> Synchronize testing frontend files")
+
+    local_dir = "www/"
+    remote_dir = "ubuntu@safeisland:/var/www/gencat.hesusruiz.org/html"
+
+    rsync_args = ["rsync",
+        "-a",   # same as -rlptgoD: recurse, preserve links, permissions, modification times, group, owner, special files
+        "-u",   # skip files which exist on the destination and have a modified time that is newer than the source file
+        "-z",   # compress when transmitting
+        "-i",   # output a change-summary for all updates
+        "--exclude-from=rsync_exclude.txt",
+        local_dir,
+        remote_dir
+    ]
+    result = sp.run(rsync_args, capture_output=False, text=True, check=False)
 

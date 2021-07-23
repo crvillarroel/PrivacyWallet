@@ -13,7 +13,7 @@ const LOG_ALL = true
 //    "logs" for persistent logging of important events for diagnostic
 
 export var db = new Dexie('SafeIslandNew');
-db.version(0.4).stores({
+db.version(0.5).stores({
     credentials: 'hash, timestamp, type',
     settings: 'key',
     logs: '++id, timestamp'

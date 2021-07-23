@@ -5,23 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Verifiable Credentials"
+      content="Verifiable Credentials for a Safe Island"
     />
-    <title>EU COVID Certificates</title>
+    <title>Safe Island</title>
 
     <!-- <script type="module" src="./components/navbar.js"></script> -->
 
     <!-- Bootstrap 4 CSS -->
     <link rel="stylesheet" href="css/bootstrap.min.css" />
-    <style>
-        .bg-dark, {
-            background-color: #8ebcf9!important;
-        }
-        .bg-dark, .btn-dark {
-            background-color: #8ebcf9!important;
-            border-color: #8ebcf9!important;
-        }
-    </style>
 
     <!-- Bootstrap 4 Icons -->
     <link rel="stylesheet" href="css/bootstrap-icons.css" />
@@ -29,13 +20,13 @@
     <!-- Specific CSS for this project -->
     <link rel="stylesheet" href="css/safeisland.css" />
 
-    <link rel="manifest" href="/manifest.json">
+    <!-- <link rel="manifest" href="/manifest.json"> -->
 
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="SafeIsland" />
-    <link rel="apple-touch-icon" href="img/gencaticons/icon-152.png" />
+    <link rel="apple-touch-icon" href="img/icon-152.png" />
   </head>
 
   <body>
@@ -48,18 +39,18 @@
 
 
 
-      <nav-bar id="header" class="navbar navbar-dark bg-dark shadow">
+      <nav-bar id="header" class="navbar navbar-light bg-light shadow">
       <!-- We use two headers, displayed/hidden depending on the specific page -->
       <!-- The first header is displayed by default and is used for main pages -->
       <div id="headerBrandNormal">
         <a class="navbar-brand" onclick="gotoPage(homePage)">
 
-            <img src="mevasalut.svg" height="35px" alt="Logo" />
+            <img src="punta_cana.png" height="35px" alt="Logo" />
 
-          <span style="padding-left: 20px;">EU Certificates</span>
+          <span style="padding-left: 20px;">SafeIsland</span>
           <button
             id="butInstall"
-            class="btn btn-sm btn-dark"
+            class="btn btn-sm btn-primary"
             style="display: none"
             type="button"
           >
@@ -87,7 +78,7 @@
 
         <!-- The FAB button to scan a new credential -->
         <div
-          class="fab bg-dark"
+          class="fab bg-primary"
           onclick='gotoPage("#passengerQRScanPage", { caller: "credentialListPage" })'
         >
           <i class="bi bi-plus"></i>
@@ -116,7 +107,7 @@
               You received a credential! Press Save to keep it.
             </div>
             <div class="col">
-              <a id="saveCredentialButton" class="btn btn-dark">
+              <a id="saveCredentialButton" class="btn btn-primary">
                 <i class="bi bi-download"></i>
                 Save
               </a>
@@ -136,18 +127,6 @@
               <p>Verification failed</p>
               <p id="failedmsg"></p>
             </div>
-          </div>
-        </div>
-
-        <!-- Alert used only by Verifier if verification success with a PRE key -->
-        <div
-          id="alertCredentialWarning"
-          class="alert alert-warning"
-          style="display: none"
-          role="alert"
-        >
-          <div class="row">
-            <div class="col">Verification succeeded, but with a key from PRE.</div>
           </div>
         </div>
 
@@ -178,7 +157,7 @@
           <nav id="footer" class="navbar fixed-bottom navbar-light bg-light">
             <a
               id="backButton"
-              class="btn btn-lg btn-dark shadow"
+              class="btn btn-lg btn-primary shadow"
               style="display: none"
               onclick="history.back()"
             >
@@ -187,7 +166,7 @@
             </a>
             <a
               id="displayQRButton"
-              class="btn btn-dark shadow"
+              class="btn btn-primary shadow"
               style="display: none"
             >
               <i class="bi bi-upc-scan"></i>
@@ -195,7 +174,7 @@
             </a>
             <a
               id="shareButton"
-              class="btn btn-dark shadow"
+              class="btn btn-primary shadow"
               style="display: none"
               onclick="gotoPage('#credentialDetailsPage');"
             >
@@ -225,7 +204,7 @@
         <div id="displayQRPageMessage"></div>
 
         <nav class="navbar fixed-bottom navbar-light bg-transparent">
-          <a class="btn btn-lg btn-dark" onclick="history.back();">Cancel</a>
+          <a class="btn btn-lg btn-primary" onclick="history.back();">Cancel</a>
         </nav>
 
         <div id="offPlaceholderQR"></div>
@@ -247,7 +226,7 @@
         <div id="passengerQRScanPageMessage">Waiting for QR ...</div>
 
         <nav class="navbar fixed-bottom navbar-light bg-transparent">
-          <a class="btn btn-lg btn-dark" onclick="history.back();">Cancel</a>
+          <a class="btn btn-lg btn-primary" onclick="history.back();">Cancel</a>
         </nav>
       </div>
       <!-- /page -->
@@ -268,11 +247,11 @@
         <div id="qrMessage">Waiting for QR ...</div>
 
           
-        <!-- <nav class="navbar fixed-bottom navbar-light bg-transparent">
-          <button class="btn btn-lg btn-dark" onclick="history.back();">
+        <nav class="navbar fixed-bottom navbar-light bg-transparent">
+          <button class="btn btn-lg btn-primary" onclick="history.back();">
             Cancel
           </button>
-        </nav> -->
+        </nav>
       </div>
       <!-- /page -->
 
@@ -412,7 +391,7 @@
         <div>
           <button
             id="tuboScanButton"
-            class="btn btn-lg btn-dark"
+            class="btn btn-lg btn-primary"
             style="display: none"
           >
             Scan again
@@ -527,7 +506,7 @@
           </div>
 
           <div class="container">
-            <a onclick="displayPubCred()" class="btn btn-dark">Preview</a>
+            <a onclick="displayPubCred()" class="btn btn-primary">Preview</a>
           </div>
         </form>
       </div>
@@ -683,7 +662,7 @@
           <div class="card-body">
             <h5 class="card-title">Error</h5>
             <p class="card-text"></p>
-            <a onclick="history.back()" class="btn btn-dark">Back</a>
+            <a onclick="history.back()" class="btn btn-primary">Back</a>
           </div>
         </div>
 
